@@ -1,0 +1,146 @@
+# ============================================================
+# Monocular Depth Estimation — Master Configuration File
+#
+# All hyperparameters live here. Never hardcode values in .py files.
+# To run an experiment with different settings, copy this file
+# (e.g., config/experiment_resnet101.yaml) and override only what changes.
+# ============================================================
+
+# ── Reproducibility ─────────────────────────────────────────
+seed: 42
+deterministic: true          # torch.use_deterministic_algorithms(True)
+                             # NOTE: slightly slower but fully reproducible
+
+# ── Paths ───────────────────────────────────────────────────
+paths:
+  data_root: "data/nyu_depth_v2"          # raw dataset location
+  checkpoint_dir: "checkpoints"
+  log_dir: "runs"                         # TensorBoard log root
+  output_dir: "outputs"                   # inference outputs
+
+# ── Dataset ─────────────────────────────────────────────────
+dataset:
+  name: "nyu_depth_v2"
+  split_file: "data/nyu_depth_v2/splits.mat"   # official train/test split
+
+  # Image dimensions fed to the network.
+  # 320x256 is safe for batch_size=8 on a T4 (15 GB VRAM).
+  # Increase to 640x480 if you have more VRAM.
+  input_height: 256
+  input_width: 320
+
+  # Depth clipping: NYU range is ~0.01m – 10.0m
+  min_depth: 0.001           # metres; pixels below this are treated as invalid
+  max_depth: 10.0            # metres; pixels above this are invalid
+
+  # DataLoader settings
+  num_workers: 4             # 2–4 for Colab; increase on a local machine
+  pin_memory: true           # speeds up CPU→GPU transfer; set false if OOM
+
+# ── Augmentation ────────────────────────────────────────────
+augmentation:
+  # Geometric — applied identically to image AND depth map
+  random_horizontal_flip: true
+  random_crop:
+    enabled: true
+    scale: [0.75, 1.0]       # crop between 75% and 100% of original size
+    ratio: [0.9, 1.1]        # aspect ratio variation
+
+  # Photometric — applied to RGB image ONLY (never to depth!)
+  color_jitter:
+    enabled: true
+    brightness: 0.2
+    contrast: 0.2
+    saturation: 0.2
+    hue: 0.05
+  random_grayscale:
+    enabled: true
+    p: 0.1                   # 10% chance of converting image to grayscale
+
+# ── Model ───────────────────────────────────────────────────
+model:
+  name: "UNetDepth"          # "UNetDepth" (baseline) | "DPTDepth" (improved)
+  encoder: "resnet50"        # backbone; resnet18/34/50/101, efficientnet_b4
+  pretrained: true           # load ImageNet weights for the encoder
+  output_activation: "sigmoid_scaled"
+  # Explanation of output activations:
+  #   sigmoid_scaled: depth = min + sigmoid(x) * (max - min)
+  #     → output is bounded, training is stable, good for beginners
+  #   softplus:       depth = softplus(x) (smooth ReLU)
+  #     → unbounded, can exceed max_depth; need careful loss clamping
+  #   log_depth:      predicts log(depth), final = exp(x)
+  #     → better for scale-invariant tasks; used in research papers
+
+# ── Loss ────────────────────────────────────────────────────
+loss:
+  # Weights for each loss component (must sum to ~1 or tune freely)
+  silog_weight: 1.0          # scale-invariant log loss (main driver)
+  berhu_weight: 0.5          # BerHu (reverse Huber) — handles outliers well
+  smoothness_weight: 0.1     # edge-aware gradient smoothness
+
+  # SILog variance minimization term (λ in the paper)
+  # 0.5 = standard; 0.85 = emphasize variance more
+  silog_lambda: 0.5
+
+  # BerHu threshold: auto-compute as 20% of max per-batch residual
+  # (set to null to use automatic; or set a fixed float like 0.2)
+  berhu_threshold: null
+
+# ── Training ────────────────────────────────────────────────
+training:
+  epochs: 50
+  batch_size: 8              # safe for T4 with 320x256; halve if OOM
+
+  # Optimizer: AdamW (Adam + weight decay; better generalization than Adam)
+  optimizer:
+    name: "adamw"
+    weight_decay: 0.01
+
+  # Layer-wise learning rates
+  # Encoder (pretrained) gets a 10× lower LR to avoid destroying ImageNet features
+  encoder_lr: 0.0001         # 1e-4
+  decoder_lr: 0.001          # 1e-3
+
+  # Learning rate scheduler
+  scheduler:
+    name: "onecycle"         # "onecycle" | "cosine"
+    # OneCycleLR: ramps up then decays — works great for short training runs
+    max_lr: 0.001            # peak LR (reached at ~30% of training)
+    pct_start: 0.3           # fraction of steps for LR warmup
+
+  # Gradient clipping: prevents exploding gradients, a common early training bug
+  grad_clip_norm: 1.0
+
+  # Mixed precision (AMP): ~2× speedup on T4 with minimal accuracy loss
+  use_amp: true
+
+  # Checkpointing
+  save_every_n_epochs: 5
+  save_best_metric: "abs_rel"   # save best model based on this metric
+  save_best_mode: "min"         # "min" for error metrics, "max" for accuracy
+
+  # Early stopping: stop if val metric doesn't improve for N epochs
+  early_stopping:
+    enabled: true
+    patience: 10              # epochs to wait before stopping
+    min_delta: 0.001          # minimum improvement to count as "better"
+
+# ── Evaluation ──────────────────────────────────────────────
+evaluation:
+  batch_size: 8
+  # Metrics to compute (all standard NYU Depth v2 benchmarks)
+  metrics:
+    - "abs_rel"              # |d - d*| / d*            (lower is better)
+    - "sq_rel"               # |d - d*|² / d*           (lower is better)
+    - "rmse"                 # sqrt(mean((d - d*)²))    (lower is better)
+    - "rmse_log"             # rmse in log space         (lower is better)
+    - "delta_1"              # % pixels where max(d/d*, d*/d) < 1.25
+    - "delta_2"              # same, threshold 1.25²
+    - "delta_3"              # same, threshold 1.25³
+
+# ── Logging ─────────────────────────────────────────────────
+logging:
+  log_every_n_steps: 10      # log train metrics every N steps
+  val_every_n_epochs: 1      # run validation every N epochs
+  num_vis_samples: 8         # number of images to visualize per val epoch
+  colormap: "magma"          # "magma" | "turbo" | "plasma"
