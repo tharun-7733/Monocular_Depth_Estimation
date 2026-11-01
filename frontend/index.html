@@ -1,0 +1,482 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Monocular Depth Estimation — Demo</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <style>
+    /* ── Reset & tokens ─────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #080b14;
+      --surface:   #0e1220;
+      --glass:     rgba(255,255,255,0.04);
+      --border:    rgba(255,255,255,0.08);
+      --accent:    #6c63ff;
+      --accent2:   #f72585;
+      --text:      #e8eaf6;
+      --muted:     #6b7280;
+      --success:   #10b981;
+      --error:     #ef4444;
+      --radius:    16px;
+      --shadow:    0 8px 32px rgba(0,0,0,0.5);
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      overflow-x: hidden;
+    }
+
+    /* ── Animated background ────────────────────────────── */
+    body::before {
+      content: '';
+      position: fixed; inset: 0; z-index: -1;
+      background:
+        radial-gradient(ellipse 80% 60% at 20% 10%, rgba(108,99,255,0.12) 0%, transparent 60%),
+        radial-gradient(ellipse 60% 50% at 80% 90%, rgba(247,37,133,0.08) 0%, transparent 60%),
+        var(--bg);
+    }
+
+    /* ── Layout ─────────────────────────────────────────── */
+    .wrapper { max-width: 1200px; margin: 0 auto; padding: 0 24px 60px; }
+
+    /* ── Header ─────────────────────────────────────────── */
+    header {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 28px 0 40px;
+    }
+    .logo { display: flex; align-items: center; gap: 12px; }
+    .logo-icon {
+      width: 44px; height: 44px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      display: grid; place-items: center; font-size: 22px;
+    }
+    .logo-text h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
+    .logo-text p  { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
+    #status-badge {
+      display: flex; align-items: center; gap: 8px;
+      padding: 8px 16px; border-radius: 999px;
+      background: var(--glass); border: 1px solid var(--border);
+      font-size: 0.8rem; color: var(--muted); transition: all .3s;
+    }
+    #status-badge .dot {
+      width: 8px; height: 8px; border-radius: 50%;
+      background: var(--muted); transition: background .3s;
+    }
+    #status-badge.ready   { color: var(--success); border-color: rgba(16,185,129,.3); }
+    #status-badge.ready .dot { background: var(--success); box-shadow: 0 0 6px var(--success); }
+    #status-badge.error   { color: var(--error);   border-color: rgba(239,68,68,.3); }
+    #status-badge.error .dot { background: var(--error); }
+
+    /* ── Controls bar ───────────────────────────────────── */
+    .controls {
+      display: flex; gap: 16px; align-items: flex-end;
+      flex-wrap: wrap; margin-bottom: 28px;
+    }
+    .control-group { display: flex; flex-direction: column; gap: 6px; }
+    .control-group label { font-size: 0.75rem; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
+    select, .toggle-btn {
+      background: var(--glass); border: 1px solid var(--border);
+      color: var(--text); border-radius: 10px; padding: 10px 14px;
+      font-size: 0.875rem; font-family: inherit; cursor: pointer;
+      transition: border-color .2s;
+    }
+    select:hover, select:focus { border-color: var(--accent); outline: none; }
+    select option { background: #1a1f35; }
+    .toggle-btn {
+      display: flex; align-items: center; gap: 8px;
+      user-select: none;
+    }
+    .toggle-btn .pill {
+      width: 36px; height: 20px; border-radius: 999px;
+      background: var(--muted); position: relative; transition: background .3s;
+    }
+    .toggle-btn .pill::after {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 14px; height: 14px; border-radius: 50%;
+      background: white; transition: transform .3s;
+    }
+    .toggle-btn.on .pill { background: var(--accent); }
+    .toggle-btn.on .pill::after { transform: translateX(16px); }
+
+    /* ── Drop zone ──────────────────────────────────────── */
+    .drop-zone {
+      border: 2px dashed var(--border); border-radius: var(--radius);
+      background: var(--glass); padding: 60px 40px;
+      text-align: center; cursor: pointer;
+      transition: border-color .25s, background .25s, transform .2s;
+      position: relative; overflow: hidden;
+      margin-bottom: 32px;
+    }
+    .drop-zone:hover, .drop-zone.drag-over {
+      border-color: var(--accent);
+      background: rgba(108,99,255,0.06);
+      transform: scale(1.005);
+    }
+    .drop-zone.drag-over { border-style: solid; }
+    .drop-icon {
+      font-size: 3rem; margin-bottom: 16px;
+      display: block; animation: float 3s ease-in-out infinite;
+    }
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50%       { transform: translateY(-8px); }
+    }
+    .drop-zone h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 8px; }
+    .drop-zone p  { font-size: 0.875rem; color: var(--muted); }
+    .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
+
+    .btn-primary {
+      display: inline-flex; align-items: center; gap: 8px;
+      margin-top: 20px; padding: 12px 28px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--accent), #8b80ff);
+      color: white; font-weight: 600; font-size: 0.9rem;
+      border: none; cursor: pointer; font-family: inherit;
+      transition: opacity .2s, transform .15s, box-shadow .2s;
+      box-shadow: 0 4px 20px rgba(108,99,255,0.35);
+    }
+    .btn-primary:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); box-shadow: 0 6px 24px rgba(108,99,255,0.45); }
+    .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+
+    /* ── Loader ─────────────────────────────────────────── */
+    #loader {
+      display: none; flex-direction: column; align-items: center;
+      gap: 16px; padding: 48px; text-align: center;
+    }
+    #loader.show { display: flex; }
+    .spinner {
+      width: 48px; height: 48px; border-radius: 50%;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      animation: spin .8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    #loader p { color: var(--muted); font-size: .9rem; }
+
+    /* ── Results ────────────────────────────────────────── */
+    #results { display: none; }
+    #results.show { display: block; }
+
+    /* Stats bar */
+    .stats-bar {
+      display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px;
+    }
+    .stat-chip {
+      padding: 8px 16px; border-radius: 999px;
+      background: var(--glass); border: 1px solid var(--border);
+      font-size: 0.8rem; display: flex; gap: 6px; align-items: center;
+    }
+    .stat-chip span { color: var(--muted); }
+    .stat-chip strong { color: var(--text); }
+
+    /* Image grid */
+    .img-grid {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 20px;
+    }
+    @media (max-width: 768px) { .img-grid { grid-template-columns: 1fr; } }
+
+    .img-card {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); overflow: hidden;
+      transition: transform .2s, box-shadow .2s;
+    }
+    .img-card:hover { transform: translateY(-4px); box-shadow: var(--shadow); }
+    .img-card-header {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 14px 16px; border-bottom: 1px solid var(--border);
+    }
+    .img-card-header h3 { font-size: 0.85rem; font-weight: 600; }
+    .badge {
+      font-size: 0.7rem; padding: 3px 8px; border-radius: 999px;
+      background: rgba(108,99,255,0.15); color: var(--accent);
+      border: 1px solid rgba(108,99,255,0.25);
+    }
+    .img-card img {
+      width: 100%; display: block;
+      transition: filter .3s;
+    }
+    .img-card img:hover { filter: brightness(1.05); }
+    .img-card-footer {
+      padding: 10px 16px; font-size: 0.75rem; color: var(--muted);
+    }
+    .download-btn {
+      display: block; width: 100%; padding: 10px;
+      background: none; border: none; border-top: 1px solid var(--border);
+      color: var(--accent); font-family: inherit; font-size: 0.8rem;
+      font-weight: 500; cursor: pointer; transition: background .2s;
+      text-align: center; letter-spacing: .03em;
+    }
+    .download-btn:hover { background: rgba(108,99,255,0.1); }
+
+    /* ── Error toast ────────────────────────────────────── */
+    #toast {
+      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
+      background: rgba(239,68,68,.15); border: 1px solid rgba(239,68,68,.35);
+      color: #fca5a5; padding: 12px 24px; border-radius: 12px;
+      font-size: .875rem; transition: transform .35s cubic-bezier(.34,1.56,.64,1);
+      z-index: 999; backdrop-filter: blur(12px);
+    }
+    #toast.show { transform: translateX(-50%) translateY(0); }
+
+    /* ── Footer ─────────────────────────────────────────── */
+    footer {
+      margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border);
+      text-align: center; color: var(--muted); font-size: 0.78rem; line-height: 1.8;
+    }
+  </style>
+</head>
+<body>
+<div class="wrapper">
+
+  <!-- Header -->
+  <header>
+    <div class="logo">
+      <div class="logo-icon">🔭</div>
+      <div class="logo-text">
+        <h1>Depth Estimator</h1>
+        <p>Monocular Depth Estimation · MiDaS v3</p>
+      </div>
+    </div>
+    <div id="status-badge">
+      <div class="dot"></div>
+      <span id="status-text">Connecting…</span>
+    </div>
+  </header>
+
+  <!-- Controls -->
+  <div class="controls">
+    <div class="control-group">
+      <label>Colormap</label>
+      <select id="colormap-select">
+        <option value="magma"   selected>🔥 Magma</option>
+        <option value="turbo">🌈 Turbo</option>
+        <option value="plasma">💜 Plasma</option>
+        <option value="inferno">🌋 Inferno</option>
+        <option value="viridis">🌿 Viridis</option>
+        <option value="gray">⬜ Grayscale</option>
+      </select>
+    </div>
+    <div class="control-group">
+      <label>Depth direction</label>
+      <div class="toggle-btn on" id="invert-toggle" title="Toggle close=bright vs far=bright">
+        <div class="pill"></div>
+        <span id="invert-label">Close = Bright</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Drop Zone -->
+  <div class="drop-zone" id="drop-zone">
+    <input type="file" id="file-input" accept="image/*" />
+    <span class="drop-icon">🖼️</span>
+    <h2>Drop your image here</h2>
+    <p>or click to browse · JPG, PNG, WebP supported</p>
+    <button class="btn-primary" type="button" onclick="document.getElementById('file-input').click()">
+      📂 Choose Image
+    </button>
+  </div>
+
+  <!-- Loader -->
+  <div id="loader">
+    <div class="spinner"></div>
+    <p id="loader-text">Running depth estimation…</p>
+  </div>
+
+  <!-- Results -->
+  <div id="results">
+    <!-- Stats -->
+    <div class="stats-bar" id="stats-bar"></div>
+
+    <!-- 3-panel grid -->
+    <div class="img-grid">
+      <!-- Original -->
+      <div class="img-card">
+        <div class="img-card-header">
+          <h3>📷 Input Image</h3>
+          <span class="badge">Original</span>
+        </div>
+        <img id="img-original" src="" alt="Input image" />
+        <div class="img-card-footer" id="size-label"></div>
+        <button class="download-btn" onclick="downloadImg('img-original','input.png')">⬇ Download</button>
+      </div>
+
+      <!-- Depth -->
+      <div class="img-card">
+        <div class="img-card-header">
+          <h3>🌊 Depth Map</h3>
+          <span class="badge" id="cmap-badge">magma</span>
+        </div>
+        <img id="img-depth" src="" alt="Depth map" />
+        <div class="img-card-footer">Higher value = closer to camera (relative)</div>
+        <button class="download-btn" onclick="downloadImg('img-depth','depth_map.png')">⬇ Download</button>
+      </div>
+
+      <!-- Edge map -->
+      <div class="img-card">
+        <div class="img-card-header">
+          <h3>✂️ Edge / Boundary Map</h3>
+          <span class="badge">Sobel</span>
+        </div>
+        <img id="img-edge" src="" alt="Edge map" />
+        <div class="img-card-footer">Depth discontinuities · bright = sharp boundary</div>
+        <button class="download-btn" onclick="downloadImg('img-edge','edge_map.png')">⬇ Download</button>
+      </div>
+    </div>
+
+    <!-- Re-run button -->
+    <div style="text-align:center; margin-top:28px;">
+      <button class="btn-primary" id="rerun-btn">🔄 Try Another Image</button>
+    </div>
+  </div>
+
+  <footer>
+    Backend: FastAPI + MiDaS_small (Intel) · PyTorch<br/>
+    Part of the <strong>Monocular Depth Estimation</strong> college project
+  </footer>
+</div>
+
+<!-- Toast -->
+<div id="toast"></div>
+
+<script>
+const API = 'http://127.0.0.1:8000';
+let invertOn = true;
+
+// ── Status polling ──────────────────────────────────────────
+async function checkHealth() {
+  try {
+    const r = await fetch(`${API}/health`);
+    if (!r.ok) throw new Error();
+    const d = await r.json();
+    const badge = document.getElementById('status-badge');
+    const txt   = document.getElementById('status-text');
+    if (d.ready) {
+      badge.className = 'ready';
+      txt.textContent = `Ready · ${d.device.toUpperCase()} · ${d.model}`;
+    } else {
+      txt.textContent = 'Loading model…';
+      setTimeout(checkHealth, 2000);
+    }
+  } catch {
+    const badge = document.getElementById('status-badge');
+    badge.className = 'error';
+    document.getElementById('status-text').textContent = 'Server offline — start uvicorn';
+    setTimeout(checkHealth, 4000);
+  }
+}
+checkHealth();
+
+// ── Toggle ──────────────────────────────────────────────────
+document.getElementById('invert-toggle').addEventListener('click', () => {
+  invertOn = !invertOn;
+  const btn = document.getElementById('invert-toggle');
+  btn.classList.toggle('on', invertOn);
+  document.getElementById('invert-label').textContent =
+    invertOn ? 'Close = Bright' : 'Far = Bright';
+});
+
+// ── Drag & drop ─────────────────────────────────────────────
+const dropZone = document.getElementById('drop-zone');
+const fileInput = document.getElementById('file-input');
+
+['dragenter','dragover'].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('drag-over'); }));
+['dragleave','drop'].forEach(ev =>
+  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('drag-over'); }));
+dropZone.addEventListener('drop', e => {
+  const f = e.dataTransfer.files[0];
+  if (f && f.type.startsWith('image/')) runInference(f);
+  else showToast('Please drop an image file (JPG / PNG / WebP).');
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) runInference(fileInput.files[0]);
+});
+
+// ── Inference ────────────────────────────────────────────────
+async function runInference(file) {
+  setLoading(true);
+  hideResults();
+
+  const form = new FormData();
+  form.append('file', file);
+  form.append('colormap', document.getElementById('colormap-select').value);
+  form.append('invert_depth', invertOn);
+
+  try {
+    const res  = await fetch(`${API}/predict`, { method: 'POST', body: form });
+    const data = await res.json();
+
+    if (!res.ok || !data.success) {
+      showToast(data.detail || 'Inference failed.');
+      return;
+    }
+    showResults(data);
+  } catch (e) {
+    showToast('Cannot reach backend. Is uvicorn running on port 8000?');
+  } finally {
+    setLoading(false);
+  }
+}
+
+// ── UI helpers ───────────────────────────────────────────────
+function setLoading(on) {
+  document.getElementById('loader').classList.toggle('show', on);
+  document.getElementById('drop-zone').style.display = on ? 'none' : '';
+}
+
+function hideResults() {
+  document.getElementById('results').classList.remove('show');
+}
+
+function showResults(d) {
+  document.getElementById('img-original').src = `data:image/png;base64,${d.original}`;
+  document.getElementById('img-depth').src    = `data:image/png;base64,${d.colorized_depth}`;
+  document.getElementById('img-edge').src     = `data:image/png;base64,${d.edge_map}`;
+  document.getElementById('cmap-badge').textContent = d.colormap;
+  document.getElementById('size-label').textContent =
+    `${d.image_size.w} × ${d.image_size.h} px`;
+
+  // Stats bar
+  const st = d.depth_stats;
+  document.getElementById('stats-bar').innerHTML = `
+    <div class="stat-chip"><span>⏱ Inference</span><strong>${d.inference_ms} ms</strong></div>
+    <div class="stat-chip"><span>📐 Size</span><strong>${d.image_size.w}×${d.image_size.h}</strong></div>
+    <div class="stat-chip"><span>🔵 Min depth</span><strong>${st.min}</strong></div>
+    <div class="stat-chip"><span>🟡 Mean depth</span><strong>${st.mean}</strong></div>
+    <div class="stat-chip"><span>🔴 Max depth</span><strong>${st.max}</strong></div>
+    <div class="stat-chip"><span>ℹ️</span><strong>Relative · unitless</strong></div>
+  `;
+
+  document.getElementById('results').classList.add('show');
+}
+
+function downloadImg(imgId, filename) {
+  const a  = document.createElement('a');
+  a.href   = document.getElementById(imgId).src;
+  a.download = filename;
+  a.click();
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 4000);
+}
+
+document.getElementById('rerun-btn').addEventListener('click', () => {
+  hideResults();
+  document.getElementById('drop-zone').style.display = '';
+  fileInput.value = '';
+});
+</script>
+</body>
+</html>

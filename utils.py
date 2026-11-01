@@ -129,7 +129,10 @@ def colorize_depth(
         normalized = np.clip(normalized, 0.0, 1.0)
 
     # Apply colormap: returns RGBA float array in [0, 1]
-    cmap = cm.get_cmap(colormap)
+    try:
+        cmap = matplotlib.colormaps[colormap]
+    except (AttributeError, KeyError):
+        cmap = cm.get_cmap(colormap)
     colorized = cmap(normalized)[:, :, :3]   # drop alpha channel
 
     # Convert to uint8 for saving / display
@@ -215,8 +218,13 @@ def visualize_batch(
 
     # Render figure to numpy array without saving to disk
     fig.canvas.draw()
-    grid_np = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
-    grid_np = grid_np.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+    try:
+        # Matplotlib >= 3.8
+        grid_np = np.asarray(fig.canvas.buffer_rgba())[:, :, :3]
+    except AttributeError:
+        # Older Matplotlib fallback
+        grid_np = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
+        grid_np = grid_np.reshape(fig.canvas.get_width_height()[::-1] + (3,))
     plt.close(fig)
 
     return grid_np
