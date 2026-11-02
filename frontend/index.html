@@ -3,480 +3,932 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-  <title>Monocular Depth Estimation — Demo</title>
+  <title>Image Depth Recognition — Depth Anything AI</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet" />
+  <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet" />
+  <!-- Three.js and OrbitControls for 3D depth mesh visualization -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
   <style>
-    /* ── Reset & tokens ─────────────────────────────────── */
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
     :root {
-      --bg:        #080b14;
-      --surface:   #0e1220;
-      --glass:     rgba(255,255,255,0.04);
-      --border:    rgba(255,255,255,0.08);
-      --accent:    #6c63ff;
-      --accent2:   #f72585;
-      --text:      #e8eaf6;
-      --muted:     #6b7280;
-      --success:   #10b981;
-      --error:     #ef4444;
-      --radius:    16px;
-      --shadow:    0 8px 32px rgba(0,0,0,0.5);
+      --bg: #090c15;
+      --surface: #101524;
+      --surface-elevated: #161c30;
+      --glass: rgba(255, 255, 255, 0.04);
+      --glass-hover: rgba(255, 255, 255, 0.08);
+      --border: rgba(255, 255, 255, 0.08);
+      --border-accent: rgba(99, 102, 241, 0.3);
+      --primary: #6366f1;
+      --primary-hover: #4f46e5;
+      --accent: #06b6d4;
+      --accent2: #ec4899;
+      --text: #f1f5f9;
+      --text-secondary: #94a3b8;
+      --muted: #64748b;
+      --success: #10b981;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --radius-sm: 8px;
+      --radius: 16px;
+      --radius-lg: 24px;
+      --shadow-sm: 0 4px 12px rgba(0, 0, 0, 0.3);
+      --shadow: 0 10px 30px -5px rgba(0, 0, 0, 0.5), 0 0 20px rgba(99, 102, 241, 0.15);
+      --shadow-glow: 0 0 40px rgba(99, 102, 241, 0.25);
     }
 
     body {
-      font-family: 'Inter', sans-serif;
+      font-family: 'Plus Jakarta Sans', sans-serif;
       background: var(--bg);
       color: var(--text);
       min-height: 100vh;
       overflow-x: hidden;
+      line-height: 1.5;
     }
 
-    /* ── Animated background ────────────────────────────── */
-    body::before {
-      content: '';
-      position: fixed; inset: 0; z-index: -1;
-      background:
-        radial-gradient(ellipse 80% 60% at 20% 10%, rgba(108,99,255,0.12) 0%, transparent 60%),
-        radial-gradient(ellipse 60% 50% at 80% 90%, rgba(247,37,133,0.08) 0%, transparent 60%),
-        var(--bg);
+    /* Ambient background glowing orbs */
+    .ambient-bg {
+      position: fixed; inset: 0; z-index: -1; pointer-events: none; overflow: hidden;
+    }
+    .orb-1 {
+      position: absolute; top: -10%; left: 15%; width: 600px; height: 600px;
+      background: radial-gradient(circle, rgba(99, 102, 241, 0.15) 0%, transparent 70%);
+      border-radius: 50%; filter: blur(60px);
+    }
+    .orb-2 {
+      position: absolute; top: 40%; right: -5%; width: 500px; height: 500px;
+      background: radial-gradient(circle, rgba(6, 182, 212, 0.12) 0%, transparent 70%);
+      border-radius: 50%; filter: blur(70px);
+    }
+    .orb-3 {
+      position: absolute; bottom: -10%; left: 30%; width: 550px; height: 550px;
+      background: radial-gradient(circle, rgba(236, 72, 153, 0.08) 0%, transparent 70%);
+      border-radius: 50%; filter: blur(80px);
     }
 
-    /* ── Layout ─────────────────────────────────────────── */
-    .wrapper { max-width: 1200px; margin: 0 auto; padding: 0 24px 60px; }
+    .wrapper { max-width: 1280px; margin: 0 auto; padding: 0 24px 80px; }
 
-    /* ── Header ─────────────────────────────────────────── */
+    /* Header */
     header {
       display: flex; align-items: center; justify-content: space-between;
-      padding: 28px 0 40px;
-    }
-    .logo { display: flex; align-items: center; gap: 12px; }
-    .logo-icon {
-      width: 44px; height: 44px; border-radius: 12px;
-      background: linear-gradient(135deg, var(--accent), var(--accent2));
-      display: grid; place-items: center; font-size: 22px;
-    }
-    .logo-text h1 { font-size: 1.25rem; font-weight: 700; letter-spacing: -0.02em; }
-    .logo-text p  { font-size: 0.75rem; color: var(--muted); margin-top: 2px; }
-    #status-badge {
-      display: flex; align-items: center; gap: 8px;
-      padding: 8px 16px; border-radius: 999px;
-      background: var(--glass); border: 1px solid var(--border);
-      font-size: 0.8rem; color: var(--muted); transition: all .3s;
-    }
-    #status-badge .dot {
-      width: 8px; height: 8px; border-radius: 50%;
-      background: var(--muted); transition: background .3s;
-    }
-    #status-badge.ready   { color: var(--success); border-color: rgba(16,185,129,.3); }
-    #status-badge.ready .dot { background: var(--success); box-shadow: 0 0 6px var(--success); }
-    #status-badge.error   { color: var(--error);   border-color: rgba(239,68,68,.3); }
-    #status-badge.error .dot { background: var(--error); }
-
-    /* ── Controls bar ───────────────────────────────────── */
-    .controls {
-      display: flex; gap: 16px; align-items: flex-end;
-      flex-wrap: wrap; margin-bottom: 28px;
-    }
-    .control-group { display: flex; flex-direction: column; gap: 6px; }
-    .control-group label { font-size: 0.75rem; color: var(--muted); font-weight: 500; text-transform: uppercase; letter-spacing: .05em; }
-    select, .toggle-btn {
-      background: var(--glass); border: 1px solid var(--border);
-      color: var(--text); border-radius: 10px; padding: 10px 14px;
-      font-size: 0.875rem; font-family: inherit; cursor: pointer;
-      transition: border-color .2s;
-    }
-    select:hover, select:focus { border-color: var(--accent); outline: none; }
-    select option { background: #1a1f35; }
-    .toggle-btn {
-      display: flex; align-items: center; gap: 8px;
-      user-select: none;
-    }
-    .toggle-btn .pill {
-      width: 36px; height: 20px; border-radius: 999px;
-      background: var(--muted); position: relative; transition: background .3s;
-    }
-    .toggle-btn .pill::after {
-      content: ''; position: absolute; top: 3px; left: 3px;
-      width: 14px; height: 14px; border-radius: 50%;
-      background: white; transition: transform .3s;
-    }
-    .toggle-btn.on .pill { background: var(--accent); }
-    .toggle-btn.on .pill::after { transform: translateX(16px); }
-
-    /* ── Drop zone ──────────────────────────────────────── */
-    .drop-zone {
-      border: 2px dashed var(--border); border-radius: var(--radius);
-      background: var(--glass); padding: 60px 40px;
-      text-align: center; cursor: pointer;
-      transition: border-color .25s, background .25s, transform .2s;
-      position: relative; overflow: hidden;
+      padding: 32px 0 28px; border-bottom: 1px solid var(--border);
       margin-bottom: 32px;
     }
-    .drop-zone:hover, .drop-zone.drag-over {
-      border-color: var(--accent);
-      background: rgba(108,99,255,0.06);
-      transform: scale(1.005);
+    .brand { display: flex; align-items: center; gap: 16px; }
+    .brand-icon {
+      width: 48px; height: 48px; border-radius: 14px;
+      background: linear-gradient(135deg, var(--primary), var(--accent));
+      display: grid; place-items: center; font-size: 24px;
+      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.4);
     }
-    .drop-zone.drag-over { border-style: solid; }
-    .drop-icon {
-      font-size: 3rem; margin-bottom: 16px;
-      display: block; animation: float 3s ease-in-out infinite;
+    .brand-text h1 {
+      font-size: 1.45rem; font-weight: 800; letter-spacing: -0.02em;
+      background: linear-gradient(135deg, #ffffff 40%, #cbd5e1);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent;
     }
-    @keyframes float {
+    .brand-text p {
+      font-size: 0.8rem; color: var(--text-secondary); margin-top: 2px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .model-tag {
+      font-family: 'JetBrains Mono', monospace; font-size: 0.72rem;
+      background: rgba(99, 102, 241, 0.15); color: #818cf8;
+      padding: 2px 8px; border-radius: 6px; border: 1px solid rgba(99, 102, 241, 0.3);
+    }
+
+    #status-badge {
+      display: flex; align-items: center; gap: 10px;
+      padding: 8px 18px; border-radius: 999px;
+      background: var(--surface); border: 1px solid var(--border);
+      font-size: 0.82rem; font-weight: 500; transition: all .3s;
+    }
+    #status-badge .dot {
+      width: 9px; height: 9px; border-radius: 50%;
+      background: var(--muted); transition: background .3s, box-shadow .3s;
+    }
+    #status-badge.ready {
+      color: var(--success); border-color: rgba(16, 185, 129, 0.3);
+      background: rgba(16, 185, 129, 0.06);
+    }
+    #status-badge.ready .dot {
+      background: var(--success); box-shadow: 0 0 10px var(--success);
+    }
+    #status-badge.error {
+      color: var(--error); border-color: rgba(239, 68, 68, 0.3);
+      background: rgba(239, 68, 68, 0.06);
+    }
+    #status-badge.error .dot { background: var(--error); }
+
+    /* Controls Bar */
+    .controls-container {
+      background: var(--surface); border: 1px solid var(--border);
+      border-radius: var(--radius); padding: 18px 24px;
+      display: flex; justify-content: space-between; align-items: center;
+      gap: 20px; flex-wrap: wrap; margin-bottom: 28px;
+    }
+    .controls-left, .controls-right { display: flex; align-items: center; gap: 18px; flex-wrap: wrap; }
+
+    .control-item { display: flex; align-items: center; gap: 10px; }
+    .control-item label {
+      font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.05em;
+      color: var(--muted); font-weight: 600;
+    }
+    select {
+      background: var(--surface-elevated); border: 1px solid var(--border);
+      color: var(--text); padding: 8px 14px; border-radius: 10px;
+      font-size: 0.875rem; font-family: inherit; font-weight: 500;
+      cursor: pointer; transition: all .2s; outline: none;
+    }
+    select:hover, select:focus { border-color: var(--primary); }
+
+    .toggle-switch {
+      display: flex; align-items: center; gap: 10px; cursor: pointer; user-select: none;
+      padding: 6px 12px; background: var(--surface-elevated); border-radius: 10px;
+      border: 1px solid var(--border); transition: border-color .2s;
+    }
+    .toggle-switch:hover { border-color: var(--border-accent); }
+    .switch-pill {
+      width: 36px; height: 20px; background: #334155; border-radius: 999px;
+      position: relative; transition: background .3s;
+    }
+    .switch-pill::after {
+      content: ''; position: absolute; top: 3px; left: 3px;
+      width: 14px; height: 14px; background: white; border-radius: 50%;
+      transition: transform .3s;
+    }
+    .toggle-switch.active .switch-pill { background: var(--primary); }
+    .toggle-switch.active .switch-pill::after { transform: translateX(16px); }
+    .switch-text { font-size: 0.82rem; font-weight: 500; }
+
+    /* Preset buttons */
+    .presets-row {
+      display: flex; align-items: center; gap: 10px; margin-bottom: 20px;
+    }
+    .presets-label { font-size: 0.8rem; color: var(--muted); font-weight: 500; }
+    .preset-btn {
+      background: var(--glass); border: 1px solid var(--border);
+      color: var(--text-secondary); padding: 6px 14px; border-radius: 999px;
+      font-size: 0.8rem; cursor: pointer; transition: all .2s; font-family: inherit;
+    }
+    .preset-btn:hover { background: var(--glass-hover); color: var(--text); border-color: var(--primary); }
+
+    /* Drop Zone */
+    .drop-zone {
+      border: 2px dashed rgba(99, 102, 241, 0.35); border-radius: var(--radius-lg);
+      background: linear-gradient(180deg, rgba(99, 102, 241, 0.03) 0%, rgba(16, 21, 36, 0.6) 100%);
+      padding: 64px 32px; text-align: center; cursor: pointer;
+      position: relative; overflow: hidden; transition: all .25s ease;
+      margin-bottom: 32px;
+    }
+    .drop-zone:hover, .drop-zone.dragover {
+      border-color: var(--primary); background: rgba(99, 102, 241, 0.08);
+      transform: translateY(-2px); box-shadow: var(--shadow-glow);
+    }
+    .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; width: 100%; height: 100%; }
+    .drop-icon-box {
+      width: 72px; height: 72px; border-radius: 20px;
+      background: rgba(99, 102, 241, 0.12); border: 1px solid rgba(99, 102, 241, 0.25);
+      display: grid; place-items: center; font-size: 32px; margin: 0 auto 20px;
+      animation: floatSlow 3s ease-in-out infinite;
+    }
+    @keyframes floatSlow {
       0%, 100% { transform: translateY(0); }
-      50%       { transform: translateY(-8px); }
+      50% { transform: translateY(-8px); }
     }
-    .drop-zone h2 { font-size: 1.1rem; font-weight: 600; margin-bottom: 8px; }
-    .drop-zone p  { font-size: 0.875rem; color: var(--muted); }
-    .drop-zone input[type=file] { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
-
-    .btn-primary {
+    .drop-title { font-size: 1.25rem; font-weight: 700; margin-bottom: 8px; }
+    .drop-desc { font-size: 0.9rem; color: var(--text-secondary); margin-bottom: 24px; }
+    .btn-action {
       display: inline-flex; align-items: center; gap: 8px;
-      margin-top: 20px; padding: 12px 28px; border-radius: 12px;
-      background: linear-gradient(135deg, var(--accent), #8b80ff);
-      color: white; font-weight: 600; font-size: 0.9rem;
+      padding: 12px 30px; border-radius: 12px;
+      background: linear-gradient(135deg, var(--primary), #818cf8);
+      color: white; font-weight: 600; font-size: 0.92rem;
       border: none; cursor: pointer; font-family: inherit;
-      transition: opacity .2s, transform .15s, box-shadow .2s;
-      box-shadow: 0 4px 20px rgba(108,99,255,0.35);
+      box-shadow: 0 4px 20px rgba(99, 102, 241, 0.35); transition: all .2s;
     }
-    .btn-primary:hover:not(:disabled) { opacity: .9; transform: translateY(-1px); box-shadow: 0 6px 24px rgba(108,99,255,0.45); }
-    .btn-primary:disabled { opacity: .4; cursor: not-allowed; }
+    .btn-action:hover {
+      transform: translateY(-2px); box-shadow: 0 8px 28px rgba(99, 102, 241, 0.5);
+    }
 
-    /* ── Loader ─────────────────────────────────────────── */
+    /* Loader */
     #loader {
       display: none; flex-direction: column; align-items: center;
-      gap: 16px; padding: 48px; text-align: center;
+      gap: 16px; padding: 60px 20px; text-align: center;
     }
     #loader.show { display: flex; }
-    .spinner {
-      width: 48px; height: 48px; border-radius: 50%;
-      border: 3px solid var(--border);
-      border-top-color: var(--accent);
-      animation: spin .8s linear infinite;
+    .spinner-ring {
+      width: 56px; height: 56px; border-radius: 50%;
+      border: 3px solid rgba(99, 102, 241, 0.2);
+      border-top-color: var(--primary);
+      animation: spin 0.8s linear infinite;
     }
     @keyframes spin { to { transform: rotate(360deg); } }
-    #loader p { color: var(--muted); font-size: .9rem; }
+    .loader-title { font-size: 1.1rem; font-weight: 600; }
+    .loader-sub { font-size: 0.85rem; color: var(--muted); }
 
-    /* ── Results ────────────────────────────────────────── */
+    /* Results section */
     #results { display: none; }
     #results.show { display: block; }
 
-    /* Stats bar */
+    /* View Mode Tabs */
+    .view-tabs {
+      display: flex; gap: 8px; margin-bottom: 24px; border-bottom: 1px solid var(--border);
+      padding-bottom: 12px;
+    }
+    .view-tab {
+      background: none; border: none; color: var(--text-secondary);
+      font-size: 0.9rem; font-weight: 600; padding: 8px 16px; border-radius: 10px;
+      cursor: pointer; transition: all .2s; font-family: inherit; display: flex; align-items: center; gap: 8px;
+    }
+    .view-tab:hover { color: var(--text); background: var(--glass); }
+    .view-tab.active { color: white; background: var(--primary); }
+
+    /* Stats Bar */
     .stats-bar {
       display: flex; gap: 12px; flex-wrap: wrap; margin-bottom: 24px;
     }
-    .stat-chip {
-      padding: 8px 16px; border-radius: 999px;
-      background: var(--glass); border: 1px solid var(--border);
-      font-size: 0.8rem; display: flex; gap: 6px; align-items: center;
+    .stat-badge {
+      display: flex; align-items: center; gap: 8px; padding: 8px 16px;
+      border-radius: 999px; background: var(--surface); border: 1px solid var(--border);
+      font-size: 0.82rem;
     }
-    .stat-chip span { color: var(--muted); }
-    .stat-chip strong { color: var(--text); }
+    .stat-badge .stat-label { color: var(--muted); }
+    .stat-badge .stat-val { color: var(--text); font-weight: 600; font-family: 'JetBrains Mono', monospace; }
 
-    /* Image grid */
-    .img-grid {
-      display: grid;
-      grid-template-columns: repeat(3, 1fr);
-      gap: 20px;
+    /* 3-Card Grid */
+    .grid-view {
+      display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px;
     }
-    @media (max-width: 768px) { .img-grid { grid-template-columns: 1fr; } }
+    @media (max-width: 900px) { .grid-view { grid-template-columns: 1fr; } }
 
-    .img-card {
+    .result-card {
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--radius); overflow: hidden;
-      transition: transform .2s, box-shadow .2s;
+      display: flex; flex-direction: column; transition: all .25s ease;
     }
-    .img-card:hover { transform: translateY(-4px); box-shadow: var(--shadow); }
-    .img-card-header {
-      display: flex; justify-content: space-between; align-items: center;
-      padding: 14px 16px; border-bottom: 1px solid var(--border);
+    .result-card:hover {
+      border-color: var(--border-accent); transform: translateY(-4px); box-shadow: var(--shadow);
     }
-    .img-card-header h3 { font-size: 0.85rem; font-weight: 600; }
-    .badge {
-      font-size: 0.7rem; padding: 3px 8px; border-radius: 999px;
-      background: rgba(108,99,255,0.15); color: var(--accent);
-      border: 1px solid rgba(108,99,255,0.25);
+    .card-header {
+      padding: 16px 20px; display: flex; justify-content: space-between; align-items: center;
+      border-bottom: 1px solid var(--border); background: rgba(255, 255, 255, 0.015);
     }
-    .img-card img {
-      width: 100%; display: block;
-      transition: filter .3s;
+    .card-title { font-size: 0.92rem; font-weight: 700; display: flex; align-items: center; gap: 8px; }
+    .card-tag {
+      font-size: 0.72rem; padding: 3px 10px; border-radius: 999px;
+      background: rgba(99, 102, 241, 0.15); color: #818cf8; font-weight: 600;
     }
-    .img-card img:hover { filter: brightness(1.05); }
-    .img-card-footer {
-      padding: 10px 16px; font-size: 0.75rem; color: var(--muted);
+    .card-img-wrap {
+      position: relative; background: #000; overflow: hidden; aspect-ratio: 4/3;
+      display: flex; align-items: center; justify-content: center;
     }
-    .download-btn {
-      display: block; width: 100%; padding: 10px;
-      background: none; border: none; border-top: 1px solid var(--border);
-      color: var(--accent); font-family: inherit; font-size: 0.8rem;
-      font-weight: 500; cursor: pointer; transition: background .2s;
-      text-align: center; letter-spacing: .03em;
+    .card-img-wrap img {
+      width: 100%; height: 100%; object-fit: contain; display: block;
     }
-    .download-btn:hover { background: rgba(108,99,255,0.1); }
+    .depth-probe-overlay {
+      position: absolute; bottom: 12px; right: 12px;
+      background: rgba(0, 0, 0, 0.75); backdrop-filter: blur(8px);
+      border: 1px solid var(--border); border-radius: 8px;
+      padding: 4px 10px; font-size: 0.75rem; font-family: 'JetBrains Mono', monospace;
+      color: #38bdf8; pointer-events: none; opacity: 0; transition: opacity .2s;
+    }
+    .card-img-wrap:hover .depth-probe-overlay { opacity: 1; }
+    .card-footer {
+      padding: 12px 20px; font-size: 0.78rem; color: var(--muted);
+      border-top: 1px solid var(--border); display: flex; justify-content: space-between; align-items: center;
+    }
+    .btn-download {
+      background: transparent; border: none; color: var(--primary);
+      font-size: 0.8rem; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 4px;
+    }
+    .btn-download:hover { text-decoration: underline; color: #818cf8; }
 
-    /* ── Error toast ────────────────────────────────────── */
+    /* Comparison Split Slider */
+    .compare-container {
+      display: none; position: relative; width: 100%; max-width: 900px; margin: 0 auto 32px;
+      border-radius: var(--radius); overflow: hidden; border: 1px solid var(--border);
+      box-shadow: var(--shadow); aspect-ratio: 16/10; user-select: none;
+    }
+    .compare-before, .compare-after {
+      position: absolute; inset: 0; width: 100%; height: 100%;
+    }
+    .compare-before img, .compare-after img {
+      width: 100%; height: 100%; object-fit: contain; background: #000;
+    }
+    .compare-before { z-index: 1; overflow: hidden; width: 50%; }
+    .compare-slider-bar {
+      position: absolute; top: 0; bottom: 0; left: 50%; width: 4px;
+      background: white; z-index: 10; cursor: ew-resize; transform: translateX(-50%);
+      box-shadow: 0 0 12px rgba(0, 0, 0, 0.8);
+    }
+    .compare-slider-handle {
+      position: absolute; top: 50%; left: 50%; transform: translate(-50%, -50%);
+      width: 38px; height: 38px; border-radius: 50%; background: white;
+      box-shadow: 0 4px 14px rgba(0, 0, 0, 0.6); display: grid; place-items: center;
+      color: #0f172a; font-weight: 800; font-size: 14px; pointer-events: none;
+    }
+
+    /* 3D Visualizer */
+    .mesh3d-container {
+      display: none; width: 100%; height: 520px; border-radius: var(--radius);
+      border: 1px solid var(--border); overflow: hidden; position: relative;
+      background: #000; margin-bottom: 24px;
+    }
+    #mesh3d-canvas { width: 100%; height: 100%; display: block; }
+    .mesh3d-overlay {
+      position: absolute; top: 16px; left: 16px; z-index: 10;
+      background: rgba(16, 21, 36, 0.85); backdrop-filter: blur(8px);
+      padding: 10px 16px; border-radius: 12px; border: 1px solid var(--border);
+      font-size: 0.8rem; pointer-events: none;
+    }
+    .mesh3d-overlay strong { color: var(--primary); }
+
+    /* Action bottom bar */
+    .bottom-bar {
+      display: flex; justify-content: center; gap: 16px; margin-top: 36px;
+    }
+
+    /* Toast */
     #toast {
-      position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%) translateY(80px);
-      background: rgba(239,68,68,.15); border: 1px solid rgba(239,68,68,.35);
-      color: #fca5a5; padding: 12px 24px; border-radius: 12px;
-      font-size: .875rem; transition: transform .35s cubic-bezier(.34,1.56,.64,1);
-      z-index: 999; backdrop-filter: blur(12px);
+      position: fixed; bottom: 28px; left: 50%; transform: translateX(-50%) translateY(100px);
+      background: rgba(16, 21, 36, 0.95); backdrop-filter: blur(14px);
+      border: 1px solid rgba(239, 68, 68, 0.4); color: #fca5a5;
+      padding: 14px 28px; border-radius: 14px; font-size: 0.88rem; font-weight: 500;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.7); transition: transform .35s cubic-bezier(0.16, 1, 0.3, 1);
+      z-index: 9999;
     }
     #toast.show { transform: translateX(-50%) translateY(0); }
+    #toast.success { border-color: rgba(16, 185, 129, 0.4); color: #86efac; }
 
-    /* ── Footer ─────────────────────────────────────────── */
+    /* Footer */
     footer {
-      margin-top: 48px; padding-top: 24px; border-top: 1px solid var(--border);
-      text-align: center; color: var(--muted); font-size: 0.78rem; line-height: 1.8;
+      margin-top: 60px; padding-top: 24px; border-top: 1px solid var(--border);
+      text-align: center; color: var(--muted); font-size: 0.82rem; line-height: 1.8;
     }
   </style>
 </head>
 <body>
-<div class="wrapper">
-
-  <!-- Header -->
-  <header>
-    <div class="logo">
-      <div class="logo-icon">🔭</div>
-      <div class="logo-text">
-        <h1>Depth Estimator</h1>
-        <p>Monocular Depth Estimation · MiDaS v3</p>
-      </div>
-    </div>
-    <div id="status-badge">
-      <div class="dot"></div>
-      <span id="status-text">Connecting…</span>
-    </div>
-  </header>
-
-  <!-- Controls -->
-  <div class="controls">
-    <div class="control-group">
-      <label>Colormap</label>
-      <select id="colormap-select">
-        <option value="magma"   selected>🔥 Magma</option>
-        <option value="turbo">🌈 Turbo</option>
-        <option value="plasma">💜 Plasma</option>
-        <option value="inferno">🌋 Inferno</option>
-        <option value="viridis">🌿 Viridis</option>
-        <option value="gray">⬜ Grayscale</option>
-      </select>
-    </div>
-    <div class="control-group">
-      <label>Depth direction</label>
-      <div class="toggle-btn on" id="invert-toggle" title="Toggle close=bright vs far=bright">
-        <div class="pill"></div>
-        <span id="invert-label">Close = Bright</span>
-      </div>
-    </div>
+  <div class="ambient-bg">
+    <div class="orb-1"></div>
+    <div class="orb-2"></div>
+    <div class="orb-3"></div>
   </div>
 
-  <!-- Drop Zone -->
-  <div class="drop-zone" id="drop-zone">
-    <input type="file" id="file-input" accept="image/*" />
-    <span class="drop-icon">🖼️</span>
-    <h2>Drop your image here</h2>
-    <p>or click to browse · JPG, PNG, WebP supported</p>
-    <button class="btn-primary" type="button" onclick="document.getElementById('file-input').click()">
-      📂 Choose Image
-    </button>
-  </div>
-
-  <!-- Loader -->
-  <div id="loader">
-    <div class="spinner"></div>
-    <p id="loader-text">Running depth estimation…</p>
-  </div>
-
-  <!-- Results -->
-  <div id="results">
-    <!-- Stats -->
-    <div class="stats-bar" id="stats-bar"></div>
-
-    <!-- 3-panel grid -->
-    <div class="img-grid">
-      <!-- Original -->
-      <div class="img-card">
-        <div class="img-card-header">
-          <h3>📷 Input Image</h3>
-          <span class="badge">Original</span>
+  <div class="wrapper">
+    <!-- Header -->
+    <header>
+      <div class="brand">
+        <div class="brand-icon">🔭</div>
+        <div class="brand-text">
+          <h1>Depth Recognizer</h1>
+          <p>
+            Monocular Depth Recognition
+            <span class="model-tag" id="header-model-tag">Depth Anything · Local</span>
+          </p>
         </div>
-        <img id="img-original" src="" alt="Input image" />
-        <div class="img-card-footer" id="size-label"></div>
-        <button class="download-btn" onclick="downloadImg('img-original','input.png')">⬇ Download</button>
+      </div>
+      <div id="status-badge">
+        <div class="dot"></div>
+        <span id="status-text">Checking model status...</span>
+      </div>
+    </header>
+
+    <!-- Controls Bar -->
+    <div class="controls-container">
+      <div class="controls-left">
+        <div class="control-item">
+          <label for="colormap-select">Palette</label>
+          <select id="colormap-select">
+            <option value="magma" selected>🔥 Magma</option>
+            <option value="turbo">🌈 Turbo</option>
+            <option value="plasma">💜 Plasma</option>
+            <option value="inferno">🌋 Inferno</option>
+            <option value="viridis">🌿 Viridis</option>
+            <option value="cividis">🌊 Cividis</option>
+            <option value="twilight">🌓 Twilight</option>
+            <option value="ocean">🌊 Ocean</option>
+            <option value="gray">⬜ Grayscale</option>
+          </select>
+        </div>
+
+        <div class="toggle-switch" id="invert-toggle" title="Switch between near=warm/bright or near=cool/dark">
+          <div class="switch-pill"></div>
+          <span class="switch-text" id="invert-label">Close = Bright</span>
+        </div>
       </div>
 
-      <!-- Depth -->
-      <div class="img-card">
-        <div class="img-card-header">
-          <h3>🌊 Depth Map</h3>
-          <span class="badge" id="cmap-badge">magma</span>
+      <div class="controls-right">
+        <div class="presets-row">
+          <span class="presets-label">Test Samples:</span>
+          <button class="preset-btn" onclick="loadSample('room')">🛋️ Living Room</button>
+          <button class="preset-btn" onclick="loadSample('landscape')">🏞️ Mountain</button>
+          <button class="preset-btn" onclick="loadSample('portrait')">👤 Portrait</button>
         </div>
-        <img id="img-depth" src="" alt="Depth map" />
-        <div class="img-card-footer">Higher value = closer to camera (relative)</div>
-        <button class="download-btn" onclick="downloadImg('img-depth','depth_map.png')">⬇ Download</button>
-      </div>
-
-      <!-- Edge map -->
-      <div class="img-card">
-        <div class="img-card-header">
-          <h3>✂️ Edge / Boundary Map</h3>
-          <span class="badge">Sobel</span>
-        </div>
-        <img id="img-edge" src="" alt="Edge map" />
-        <div class="img-card-footer">Depth discontinuities · bright = sharp boundary</div>
-        <button class="download-btn" onclick="downloadImg('img-edge','edge_map.png')">⬇ Download</button>
       </div>
     </div>
 
-    <!-- Re-run button -->
-    <div style="text-align:center; margin-top:28px;">
-      <button class="btn-primary" id="rerun-btn">🔄 Try Another Image</button>
+    <!-- Drop Zone -->
+    <div class="drop-zone" id="drop-zone">
+      <input type="file" id="file-input" accept="image/*" />
+      <div class="drop-icon-box">🖼️</div>
+      <h2 class="drop-title">Drop your image here to estimate depth</h2>
+      <p class="drop-desc">Supports PNG, JPG, JPEG, WEBP · Processed locally with GPU/MPS acceleration</p>
+      <button class="btn-action" type="button" onclick="document.getElementById('file-input').click()">
+        📁 Select Image
+      </button>
     </div>
+
+    <!-- Loader -->
+    <div id="loader">
+      <div class="spinner-ring"></div>
+      <div class="loader-title">Inferring Depth Map...</div>
+      <div class="loader-sub">Extracting multi-scale dense features via Depth Anything transformer</div>
+    </div>
+
+    <!-- Results Section -->
+    <div id="results">
+      <!-- Tabs -->
+      <div class="view-tabs">
+        <button class="view-tab active" onclick="switchView('grid')">
+          <span>📊</span> 3-Panel Inspection
+        </button>
+        <button class="view-tab" onclick="switchView('compare')">
+          <span>↔️</span> Split Comparison
+        </button>
+        <button class="view-tab" onclick="switchView('mesh3d')">
+          <span>🌐</span> Interactive 3D Mesh
+        </button>
+      </div>
+
+      <!-- Stats Bar -->
+      <div class="stats-bar" id="stats-bar"></div>
+
+      <!-- View 1: 3-Panel Grid -->
+      <div class="grid-view" id="view-grid">
+        <!-- Input RGB -->
+        <div class="result-card">
+          <div class="card-header">
+            <span class="card-title">📸 Input Image</span>
+            <span class="card-tag">RGB Original</span>
+          </div>
+          <div class="card-img-wrap">
+            <img id="img-original" alt="Original Input" />
+          </div>
+          <div class="card-footer">
+            <span id="img-dims">0 × 0 px</span>
+            <button class="btn-download" onclick="downloadImage('img-original', 'original_image.png')">⬇ Download</button>
+          </div>
+        </div>
+
+        <!-- Depth Map -->
+        <div class="result-card">
+          <div class="card-header">
+            <span class="card-title">🌊 Colorized Depth Map</span>
+            <span class="card-tag" id="tag-colormap">magma</span>
+          </div>
+          <div class="card-img-wrap" id="depth-img-wrap">
+            <img id="img-depth" alt="Depth Estimation" />
+            <div class="depth-probe-overlay" id="depth-probe">Depth: --</div>
+          </div>
+          <div class="card-footer">
+            <span>Higher intensity = Closer distance</span>
+            <button class="btn-download" onclick="downloadImage('img-depth', 'depth_map.png')">⬇ Download</button>
+          </div>
+        </div>
+
+        <!-- Edge Discontinuity -->
+        <div class="result-card">
+          <div class="card-header">
+            <span class="card-title">✂️ Depth Edge Map</span>
+            <span class="card-tag">Sobel Gradients</span>
+          </div>
+          <div class="card-img-wrap">
+            <img id="img-edge" alt="Depth Edge Map" />
+          </div>
+          <div class="card-footer">
+            <span>Spatial object boundaries</span>
+            <button class="btn-download" onclick="downloadImage('img-edge', 'depth_edge_map.png')">⬇ Download</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- View 2: Split Comparison Slider -->
+      <div class="compare-container" id="view-compare">
+        <div class="compare-after">
+          <img id="compare-img-depth" alt="Depth" />
+        </div>
+        <div class="compare-before" id="compare-before-wrap">
+          <img id="compare-img-orig" alt="RGB" />
+        </div>
+        <div class="compare-slider-bar" id="compare-bar">
+          <div class="compare-slider-handle">↔</div>
+        </div>
+      </div>
+
+      <!-- View 3: 3D Point Mesh -->
+      <div class="mesh3d-container" id="view-mesh3d">
+        <div class="mesh3d-overlay">
+          <strong>Interactive 3D Depth Visualizer</strong><br />
+          Click & drag to rotate · Scroll to zoom · Right-click to pan
+        </div>
+        <canvas id="mesh3d-canvas"></canvas>
+      </div>
+
+      <!-- Bottom Actions -->
+      <div class="bottom-bar">
+        <button class="btn-action" onclick="resetUpload()">
+          🔄 Estimate Another Image
+        </button>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    <footer>
+      Backend: FastAPI + PyTorch · Powered by <strong>Depth Anything</strong> (<code style="color:#818cf8;">trained_depth_model</code>)<br />
+      Hardware Accelerated Depth Recognition Pipeline
+    </footer>
   </div>
 
-  <footer>
-    Backend: FastAPI + MiDaS_small (Intel) · PyTorch<br/>
-    Part of the <strong>Monocular Depth Estimation</strong> college project
-  </footer>
-</div>
+  <!-- Toast Notification -->
+  <div id="toast"></div>
 
-<!-- Toast -->
-<div id="toast"></div>
+  <script>
+    // Dynamically connect to the active backend origin (or fallback to port 8000)
+    const API = window.location.origin.startsWith('http') ? window.location.origin : 'http://127.0.0.1:8000';
+    let invertDepth = false;
+    let lastUploadedFile = null;
+    let currentResponseData = null;
 
-<script>
-const API = 'http://127.0.0.1:8000';
-let invertOn = true;
-
-// ── Status polling ──────────────────────────────────────────
-async function checkHealth() {
-  try {
-    const r = await fetch(`${API}/health`);
-    if (!r.ok) throw new Error();
-    const d = await r.json();
-    const badge = document.getElementById('status-badge');
-    const txt   = document.getElementById('status-text');
-    if (d.ready) {
-      badge.className = 'ready';
-      txt.textContent = `Ready · ${d.device.toUpperCase()} · ${d.model}`;
-    } else {
-      txt.textContent = 'Loading model…';
-      setTimeout(checkHealth, 2000);
+    // ── Health Check ──────────────────────────────────────────
+    async function checkHealth() {
+      const badge = document.getElementById('status-badge');
+      const text = document.getElementById('status-text');
+      const tag = document.getElementById('header-model-tag');
+      try {
+        const res = await fetch(`${API}/health`);
+        if (!res.ok) throw new Error('Health check failed');
+        const data = await res.json();
+        
+        if (data.ready) {
+          badge.className = 'ready';
+          const dev = data.device.toUpperCase();
+          text.textContent = `Online · ${dev} · ${data.model}`;
+          tag.textContent = data.model_kind === 'depth_anything_local' 
+            ? 'Depth Anything (Local)' 
+            : data.model;
+        } else {
+          badge.className = '';
+          text.textContent = 'Model loading...';
+          setTimeout(checkHealth, 2000);
+        }
+      } catch (err) {
+        badge.className = 'error';
+        text.textContent = 'Backend offline · check terminal';
+        setTimeout(checkHealth, 4000);
+      }
     }
-  } catch {
-    const badge = document.getElementById('status-badge');
-    badge.className = 'error';
-    document.getElementById('status-text').textContent = 'Server offline — start uvicorn';
-    setTimeout(checkHealth, 4000);
-  }
-}
-checkHealth();
+    checkHealth();
 
-// ── Toggle ──────────────────────────────────────────────────
-document.getElementById('invert-toggle').addEventListener('click', () => {
-  invertOn = !invertOn;
-  const btn = document.getElementById('invert-toggle');
-  btn.classList.toggle('on', invertOn);
-  document.getElementById('invert-label').textContent =
-    invertOn ? 'Close = Bright' : 'Far = Bright';
-});
+    // ── Invert depth toggle ───────────────────────────────────
+    const invertBtn = document.getElementById('invert-toggle');
+    invertBtn.addEventListener('click', () => {
+      invertDepth = !invertDepth;
+      invertBtn.classList.toggle('active', invertDepth);
+      document.getElementById('invert-label').textContent = invertDepth ? 'Close = Dark' : 'Close = Bright';
+      if (lastUploadedFile) {
+        runInference(lastUploadedFile);
+      }
+    });
 
-// ── Drag & drop ─────────────────────────────────────────────
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
+    // ── Colormap change re-triggers if image is active ─────────
+    document.getElementById('colormap-select').addEventListener('change', () => {
+      if (lastUploadedFile) {
+        runInference(lastUploadedFile);
+      }
+    });
 
-['dragenter','dragover'].forEach(ev =>
-  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.add('drag-over'); }));
-['dragleave','drop'].forEach(ev =>
-  dropZone.addEventListener(ev, e => { e.preventDefault(); dropZone.classList.remove('drag-over'); }));
-dropZone.addEventListener('drop', e => {
-  const f = e.dataTransfer.files[0];
-  if (f && f.type.startsWith('image/')) runInference(f);
-  else showToast('Please drop an image file (JPG / PNG / WebP).');
-});
-fileInput.addEventListener('change', () => {
-  if (fileInput.files[0]) runInference(fileInput.files[0]);
-});
+    // ── Drag & Drop ───────────────────────────────────────────
+    const dropZone = document.getElementById('drop-zone');
+    const fileInput = document.getElementById('file-input');
 
-// ── Inference ────────────────────────────────────────────────
-async function runInference(file) {
-  setLoading(true);
-  hideResults();
+    ['dragenter', 'dragover'].forEach(name => {
+      dropZone.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropZone.classList.add('dragover');
+      });
+    });
 
-  const form = new FormData();
-  form.append('file', file);
-  form.append('colormap', document.getElementById('colormap-select').value);
-  form.append('invert_depth', invertOn);
+    ['dragleave', 'drop'].forEach(name => {
+      dropZone.addEventListener(name, (e) => {
+        e.preventDefault();
+        dropZone.classList.remove('dragover');
+      });
+    });
 
-  try {
-    const res  = await fetch(`${API}/predict`, { method: 'POST', body: form });
-    const data = await res.json();
+    dropZone.addEventListener('drop', (e) => {
+      const files = e.dataTransfer.files;
+      if (files.length > 0 && files[0].type.startsWith('image/')) {
+        lastUploadedFile = files[0];
+        runInference(files[0]);
+      } else {
+        showToast('Please provide a valid image file (PNG, JPG, WebP).');
+      }
+    });
 
-    if (!res.ok || !data.success) {
-      showToast(data.detail || 'Inference failed.');
-      return;
+    fileInput.addEventListener('change', () => {
+      if (fileInput.files.length > 0) {
+        lastUploadedFile = fileInput.files[0];
+        runInference(fileInput.files[0]);
+      }
+    });
+
+    // ── Run Depth Inference ───────────────────────────────────
+    async function runInference(file) {
+      setLoading(true);
+      document.getElementById('results').classList.remove('show');
+
+      const colormap = document.getElementById('colormap-select').value;
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('colormap', colormap);
+      formData.append('invert_depth', invertDepth);
+
+      try {
+        const response = await fetch(`${API}/predict`, {
+          method: 'POST',
+          body: formData,
+        });
+
+        const data = await response.json();
+        if (!response.ok || !data.success) {
+          showToast(data.detail || 'Inference error occurred.');
+          return;
+        }
+
+        currentResponseData = data;
+        displayResults(data);
+        showToast(`Depth map inferred in ${data.inference_ms} ms!`, true);
+      } catch (err) {
+        showToast(`Connection failed: ${err.message}. Is the backend running?`);
+      } finally {
+        setLoading(false);
+      }
     }
-    showResults(data);
-  } catch (e) {
-    showToast('Cannot reach backend. Is uvicorn running on port 8000?');
-  } finally {
-    setLoading(false);
-  }
-}
 
-// ── UI helpers ───────────────────────────────────────────────
-function setLoading(on) {
-  document.getElementById('loader').classList.toggle('show', on);
-  document.getElementById('drop-zone').style.display = on ? 'none' : '';
-}
+    // ── Display Results ───────────────────────────────────────
+    function displayResults(data) {
+      const origSrc = `data:image/png;base64,${data.original}`;
+      const depthSrc = `data:image/png;base64,${data.colorized_depth}`;
+      const edgeSrc = `data:image/png;base64,${data.edge_map}`;
 
-function hideResults() {
-  document.getElementById('results').classList.remove('show');
-}
+      document.getElementById('img-original').src = origSrc;
+      document.getElementById('img-depth').src = depthSrc;
+      document.getElementById('img-edge').src = edgeSrc;
+      document.getElementById('tag-colormap').textContent = data.colormap;
+      document.getElementById('img-dims').textContent = `${data.image_size.w} × ${data.image_size.h} px`;
 
-function showResults(d) {
-  document.getElementById('img-original').src = `data:image/png;base64,${d.original}`;
-  document.getElementById('img-depth').src    = `data:image/png;base64,${d.colorized_depth}`;
-  document.getElementById('img-edge').src     = `data:image/png;base64,${d.edge_map}`;
-  document.getElementById('cmap-badge').textContent = d.colormap;
-  document.getElementById('size-label').textContent =
-    `${d.image_size.w} × ${d.image_size.h} px`;
+      // Split compare images
+      document.getElementById('compare-img-orig').src = origSrc;
+      document.getElementById('compare-img-depth').src = depthSrc;
 
-  // Stats bar
-  const st = d.depth_stats;
-  document.getElementById('stats-bar').innerHTML = `
-    <div class="stat-chip"><span>⏱ Inference</span><strong>${d.inference_ms} ms</strong></div>
-    <div class="stat-chip"><span>📐 Size</span><strong>${d.image_size.w}×${d.image_size.h}</strong></div>
-    <div class="stat-chip"><span>🔵 Min depth</span><strong>${st.min}</strong></div>
-    <div class="stat-chip"><span>🟡 Mean depth</span><strong>${st.mean}</strong></div>
-    <div class="stat-chip"><span>🔴 Max depth</span><strong>${st.max}</strong></div>
-    <div class="stat-chip"><span>ℹ️</span><strong>Relative · unitless</strong></div>
-  `;
+      // Stats
+      const st = data.depth_stats;
+      document.getElementById('stats-bar').innerHTML = `
+        <div class="stat-badge"><span class="stat-label">⏱️ Latency</span><span class="stat-val">${data.inference_ms} ms</span></div>
+        <div class="stat-badge"><span class="stat-label">💻 Accelerator</span><span class="stat-val">${data.device.toUpperCase()}</span></div>
+        <div class="stat-badge"><span class="stat-label">🧠 Model</span><span class="stat-val">${data.model_used}</span></div>
+        <div class="stat-badge"><span class="stat-label">📐 Resolution</span><span class="stat-val">${data.image_size.w}×${data.image_size.h}</span></div>
+        <div class="stat-badge"><span class="stat-label">🔵 Min</span><span class="stat-val">${st.min}</span></div>
+        <div class="stat-badge"><span class="stat-label">🟡 Mean</span><span class="stat-val">${st.mean}</span></div>
+        <div class="stat-badge"><span class="stat-label">🔴 Max</span><span class="stat-val">${st.max}</span></div>
+      `;
 
-  document.getElementById('results').classList.add('show');
-}
+      document.getElementById('results').classList.add('show');
+      document.getElementById('drop-zone').style.display = 'none';
 
-function downloadImg(imgId, filename) {
-  const a  = document.createElement('a');
-  a.href   = document.getElementById(imgId).src;
-  a.download = filename;
-  a.click();
-}
+      // Setup 3D mesh if grid preview is available
+      if (data.depth_grid_preview) {
+        initThreeJSMesh(data.depth_grid_preview, data.depth_grid_dims, data.colormap);
+      }
+    }
 
-function showToast(msg) {
-  const t = document.getElementById('toast');
-  t.textContent = msg;
-  t.classList.add('show');
-  setTimeout(() => t.classList.remove('show'), 4000);
-}
+    // ── View Switching ────────────────────────────────────────
+    let currentView = 'grid';
+    function switchView(view) {
+      currentView = view;
+      document.querySelectorAll('.view-tab').forEach((t, i) => {
+        t.classList.toggle('active', ['grid', 'compare', 'mesh3d'][i] === view);
+      });
 
-document.getElementById('rerun-btn').addEventListener('click', () => {
-  hideResults();
-  document.getElementById('drop-zone').style.display = '';
-  fileInput.value = '';
-});
-</script>
+      document.getElementById('view-grid').style.display = view === 'grid' ? 'grid' : 'none';
+      document.getElementById('view-compare').style.display = view === 'compare' ? 'block' : 'none';
+      document.getElementById('view-mesh3d').style.display = view === 'mesh3d' ? 'block' : 'none';
+
+      if (view === 'compare') setupComparisonSlider();
+      if (view === 'mesh3d' && renderer3d) onResize3d();
+    }
+
+    // ── Comparison Slider Interaction ─────────────────────────
+    let sliderInitialized = false;
+    function setupComparisonSlider() {
+      if (sliderInitialized) return;
+      sliderInitialized = true;
+
+      const container = document.getElementById('view-compare');
+      const beforeWrap = document.getElementById('compare-before-wrap');
+      const bar = document.getElementById('compare-bar');
+
+      let isDown = false;
+      const updateSlider = (clientX) => {
+        const rect = container.getBoundingClientRect();
+        let x = clientX - rect.left;
+        if (x < 0) x = 0;
+        if (x > rect.width) x = rect.width;
+        const percent = (x / rect.width) * 100;
+        beforeWrap.style.width = `${percent}%`;
+        bar.style.left = `${percent}%`;
+      };
+
+      container.addEventListener('mousedown', (e) => { isDown = true; updateSlider(e.clientX); });
+      window.addEventListener('mouseup', () => { isDown = false; });
+      window.addEventListener('mousemove', (e) => { if (isDown) updateSlider(e.clientX); });
+
+      container.addEventListener('touchstart', (e) => { isDown = true; updateSlider(e.touches[0].clientX); });
+      window.addEventListener('touchend', () => { isDown = false; });
+      window.addEventListener('touchmove', (e) => { if (isDown) updateSlider(e.touches[0].clientX); });
+    }
+
+    // ── Three.js 3D Depth Mesh ────────────────────────────────
+    let scene3d, camera3d, renderer3d, controls3d, mesh3d;
+    function initThreeJSMesh(grid, dims, colormap) {
+      const container = document.getElementById('view-mesh3d');
+      const canvas = document.getElementById('mesh3d-canvas');
+      
+      const width = container.clientWidth || 800;
+      const height = container.clientHeight || 520;
+
+      if (!renderer3d) {
+        scene3d = new THREE.Scene();
+        scene3d.background = new THREE.Color(0x070a14);
+
+        camera3d = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+        camera3d.position.set(0, -60, 90);
+
+        renderer3d = new THREE.WebGLRenderer({ canvas: canvas, antialias: true });
+        renderer3d.setSize(width, height);
+        renderer3d.setPixelRatio(window.devicePixelRatio);
+
+        controls3d = new THREE.OrbitControls(camera3d, renderer3d.domElement);
+        controls3d.enableDamping = true;
+        controls3d.dampingFactor = 0.05;
+
+        const ambientLight = new THREE.AmbientLight(0xffffff, 0.7);
+        scene3d.add(ambientLight);
+
+        const dirLight = new THREE.DirectionalLight(0xffffff, 0.9);
+        dirLight.position.set(50, 50, 100);
+        scene3d.add(dirLight);
+
+        const animate = () => {
+          requestAnimationFrame(animate);
+          controls3d.update();
+          renderer3d.render(scene3d, camera3d);
+        };
+        animate();
+
+        window.addEventListener('resize', onResize3d);
+      }
+
+      // Recreate geometry from depth grid
+      if (mesh3d) scene3d.remove(mesh3d);
+
+      const gw = dims.w;
+      const gh = dims.h;
+      const planeGeo = new THREE.PlaneGeometry(80, 80 * (gh / gw), gw - 1, gh - 1);
+      const pos = planeGeo.attributes.position;
+      const colors = [];
+
+      for (let i = 0; i < pos.count; i++) {
+        const row = Math.floor(i / gw);
+        const col = i % gw;
+        const val = grid[row] && grid[row][col] !== undefined ? grid[row][col] : 0;
+        // Displace Z along depth
+        pos.setZ(i, (val / 255.0) * 22);
+
+        // Color based on depth intensity
+        const t = val / 255.0;
+        const color = new THREE.Color();
+        color.setHSL(0.7 - t * 0.7, 0.9, 0.5);
+        colors.push(color.r, color.g, color.b);
+      }
+
+      planeGeo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+      planeGeo.computeVertexNormals();
+
+      const mat = new THREE.MeshStandardMaterial({
+        vertexColors: true,
+        roughness: 0.35,
+        metalness: 0.1,
+        wireframe: false,
+        side: THREE.DoubleSide,
+      });
+
+      mesh3d = new THREE.Mesh(planeGeo, mat);
+      mesh3d.rotation.x = -Math.PI / 4;
+      scene3d.add(mesh3d);
+    }
+
+    function onResize3d() {
+      if (!renderer3d) return;
+      const container = document.getElementById('view-mesh3d');
+      const w = container.clientWidth;
+      const h = container.clientHeight;
+      camera3d.aspect = w / h;
+      camera3d.updateProjectionMatrix();
+      renderer3d.setSize(w, h);
+    }
+
+    // ── Sample Image Loader ───────────────────────────────────
+    function loadSample(type) {
+      // Create synthetic sample canvas for instant zero-friction testing
+      const canvas = document.createElement('canvas');
+      canvas.width = 640;
+      canvas.height = 480;
+      const ctx = canvas.getContext('2d');
+
+      if (type === 'room') {
+        // Draw room perspective: walls, floor, table
+        const grad = ctx.createLinearGradient(0, 0, 0, 300);
+        grad.addColorStop(0, '#1e293b'); grad.addColorStop(1, '#475569');
+        ctx.fillStyle = grad; ctx.fillRect(0, 0, 640, 480);
+        
+        // Floor
+        ctx.fillStyle = '#334155';
+        ctx.beginPath(); ctx.moveTo(0, 320); ctx.lineTo(640, 320); ctx.lineTo(640, 480); ctx.lineTo(0, 480); ctx.fill();
+        
+        // Table in foreground
+        ctx.fillStyle = '#94a3b8';
+        ctx.fillRect(200, 260, 240, 140);
+        ctx.fillStyle = '#64748b';
+        ctx.beginPath(); ctx.arc(320, 230, 40, 0, Math.PI * 2); ctx.fill();
+      } else if (type === 'landscape') {
+        // Sky
+        const sky = ctx.createLinearGradient(0, 0, 0, 280);
+        sky.addColorStop(0, '#38bdf8'); sky.addColorStop(1, '#bae6fd');
+        ctx.fillStyle = sky; ctx.fillRect(0, 0, 640, 480);
+        
+        // Distant mountains
+        ctx.fillStyle = '#64748b';
+        ctx.beginPath(); ctx.moveTo(0, 280); ctx.lineTo(200, 140); ctx.lineTo(360, 260); ctx.lineTo(520, 120); ctx.lineTo(640, 280); ctx.fill();
+        
+        // Foreground trees
+        ctx.fillStyle = '#166534';
+        ctx.beginPath(); ctx.moveTo(60, 380); ctx.lineTo(120, 220); ctx.lineTo(180, 380); ctx.fill();
+        ctx.fillStyle = '#15803d';
+        ctx.fillRect(0, 350, 640, 130);
+      } else {
+        // Portrait silhouette
+        ctx.fillStyle = '#1e1b4b'; ctx.fillRect(0, 0, 640, 480);
+        ctx.fillStyle = '#c084fc';
+        // Head
+        ctx.beginPath(); ctx.arc(320, 180, 75, 0, Math.PI * 2); ctx.fill();
+        // Shoulders
+        ctx.beginPath(); ctx.ellipse(320, 380, 170, 130, 0, 0, Math.PI * 2); ctx.fill();
+      }
+
+      canvas.toBlob((blob) => {
+        const file = new File([blob], `${type}_sample.png`, { type: 'image/png' });
+        lastUploadedFile = file;
+        runInference(file);
+      }, 'image/png');
+    }
+
+    // ── Helper Utilities ──────────────────────────────────────
+    function setLoading(show) {
+      document.getElementById('loader').classList.toggle('show', show);
+    }
+
+    function resetUpload() {
+      document.getElementById('results').classList.remove('show');
+      document.getElementById('drop-zone').style.display = 'block';
+      fileInput.value = '';
+    }
+
+    function downloadImage(imgId, filename) {
+      const src = document.getElementById(imgId).src;
+      if (!src) return;
+      const a = document.createElement('a');
+      a.href = src;
+      a.download = filename;
+      a.click();
+    }
+
+    function showToast(msg, isSuccess = false) {
+      const t = document.getElementById('toast');
+      t.textContent = msg;
+      t.className = isSuccess ? 'show success' : 'show';
+      setTimeout(() => { t.className = ''; }, 4000);
+    }
+  </script>
 </body>
 </html>
